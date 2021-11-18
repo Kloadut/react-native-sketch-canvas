@@ -12,7 +12,7 @@ import ReactNative, {
   ViewPropTypes,
   processColor
 } from 'react-native'
-//import { requestPermissions } from "@terrylinla/react-native-sketch-canvas/src/handlePermissions";
+//import { requestPermissions } from './handlePermissions';
 
 const RNSketchCanvas = requireNativeComponent('RNSketchCanvas', SketchCanvas, {
   nativeOnly: {
@@ -29,9 +29,9 @@ class SketchCanvas extends React.Component {
     strokeWidth: PropTypes.number,
     undoMyShit: PropTypes.bool,
     onPathsChange: PropTypes.func,
-    onStrokeStart: PropTypes.func,
-    onStrokeChanged: PropTypes.func,
-    onStrokeEnd: PropTypes.func,
+    //onStrokeStart: PropTypes.func,
+    //onStrokeChanged: PropTypes.func,
+    //onStrokeEnd: PropTypes.func,
     onSketchSaved: PropTypes.func,
     user: PropTypes.string,
 
@@ -61,9 +61,9 @@ class SketchCanvas extends React.Component {
     strokeWidth: 3,
     undoMyShit: false,
     onPathsChange: () => { },
-    onStrokeStart: () => { },
-    onStrokeChanged: () => { },
-    onStrokeEnd: () => { },
+    //onStrokeStart: () => { },
+    //onStrokeChanged: () => { },
+    //onStrokeEnd: () => { },
     onSketchSaved: () => { },
     user: null,
 
@@ -110,9 +110,15 @@ class SketchCanvas extends React.Component {
         [...this.props.paths, { path: this.state.path, size: this._size, drawer: this.props.user }]
       )
       UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.endPath, [])
-      this.undo(() => {
         this.props.onPathRemoved()
-      })
+
+      //if (this.state.path.data?.length === 1) {
+      //  this.undo(() => {
+      //    this.props.onPathRemoved()
+      //  })
+      //} else {
+      //  this.props.onPathRemoved()
+      //}
       //this._paths.push({ path: this.state.path, size: this._size, drawer: this.props.user })
       //this.setState({
       //  text: this._processText(nextProps.text ? nextProps.text.map(t => Object.assign({}, t)) : null),
@@ -150,22 +156,23 @@ class SketchCanvas extends React.Component {
     if (lastId >= 0) this.deletePath(lastId, callback)
   }
 
-  addPath(data) {
-    if (this._initialized) {
-      if (this.props.paths.filter(p => p.path.id === data.path.id).length === 0) {
-        this.props.setPaths([...this.props.paths, data])
-      }
-      const pathData = data.path.data.map(p => {
-        const coor = p.split(',').map(pp => parseFloat(pp).toFixed(2))
-        return `${coor[0] * this._screenScale * this._size.width / data.size.width},${coor[1] * this._screenScale * this._size.height / data.size.height}`;
-      })
-      UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.addPath, [
-        data.path.id, processColor(data.path.color), data.path.width * this._screenScale, pathData
-      ])
-    } else {
-      this._pathsToProcess.filter(p => p.path.id === data.path.id).length === 0 && this._pathsToProcess.push(data)
-    }
-  }
+  // FOR EDITING
+  //addPath(data) {
+  //  if (this._initialized) {
+  //    if (this.props.paths.filter(p => p.path.id === data.path.id).length === 0) {
+  //      this.props.setPaths([...this.props.paths, data])
+  //    }
+  //    const pathData = data.path.data.map(p => {
+  //      const coor = p.split(',').map(pp => parseFloat(pp).toFixed(2))
+  //      return `${coor[0] * this._screenScale * this._size.width / data.size.width},${coor[1] * this._screenScale * this._size.height / data.size.height}`;
+  //    })
+  //    UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.addPath, [
+  //      data.path.id, processColor(data.path.color), data.path.width * this._screenScale, pathData
+  //    ])
+  //  } else {
+  //    this._pathsToProcess.filter(p => p.path.id === data.path.id).length === 0 && this._pathsToProcess.push(data)
+  //  }
+  //}
 
   deletePath(id, callback) {
     //this._paths = this._paths.filter(p => p.path.id !== id)
@@ -190,7 +197,15 @@ class SketchCanvas extends React.Component {
     }
   }
 
-  componentWillMount() {
+  //componentWillMount() {
+  //}
+
+  componentDidMount() {
+    //const isStoragePermissionAuthorized = await requestPermissions(
+    //  this.props.permissionDialogTitle,
+    //  this.props.permissionDialogMessage,
+    //);
+
     this.panResponder = PanResponder.create({
       // Ask to be the responder:
       onStartShouldSetPanResponder: (evt, gestureState) => true,
@@ -227,7 +242,7 @@ class SketchCanvas extends React.Component {
           const x = parseFloat((gestureState.x0 - this._offset.x).toFixed(2)), y = parseFloat((gestureState.y0 - this._offset.y).toFixed(2))
           this.setState({ path: {...this.state.path, data: [...this.state.path.data, `${x},${y}`]} }, () => {
             //this._path.data.push(`${x},${y}`)
-            this.props.onStrokeStart(x, y)
+            //this.props.onStrokeStart(x, y)
           })
         })
       },
@@ -242,17 +257,18 @@ class SketchCanvas extends React.Component {
             parseFloat((gestureState.moveX - adjX - this._offset.x).toFixed(2) * this._screenScale),
             parseFloat((gestureState.moveY - adjY - this._offset.y).toFixed(2) * this._screenScale)
           ])
-          const x = parseFloat((gestureState.moveX - this._offset.x).toFixed(2)), y = parseFloat((gestureState.moveY - this._offset.y).toFixed(2))
+          const x = parseFloat((gestureState.moveX - adjX - this._offset.x).toFixed(2))
+          const y = parseFloat((gestureState.moveY - adjY - this._offset.y).toFixed(2))
           this.setState({ path: {...this.state.path, data: [...this.state.path.data, `${x},${y}`]} }, () => {
             //this._path.data.push(`${x},${y}`)
-            this.props.onStrokeChanged(x, y)
+            //this.props.onStrokeChanged(x, y)
           })
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
         if (!this.props.touchEnabled) return
         if (this.state.path) {
-          this.props.onStrokeEnd({ path: this.state.path, size: this._size, drawer: this.props.user })
+          //this.props.onStrokeEnd({ path: this.state.path, size: this._size, drawer: this.props.user })
           this.props.setPaths([...this.props.paths, { path: this.state.path, size: this._size, drawer: this.props.user }])
             //this._paths.push({ path: this.state.path, size: this._size, drawer: this.props.user })
         }
@@ -265,14 +281,8 @@ class SketchCanvas extends React.Component {
     });
   }
 
-  async componentDidMount() {
-    //const isStoragePermissionAuthorized = await requestPermissions(
-    //  this.props.permissionDialogTitle,
-    //  this.props.permissionDialogMessage,
-    //);
-  }
-
   render() {
+    if (this.panResponder) {
     return (
       <RNSketchCanvas
         ref={ref => {
@@ -282,7 +292,8 @@ class SketchCanvas extends React.Component {
         onLayout={e => {
           this._size = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height }
           this._initialized = true
-          this._pathsToProcess.length > 0 && this._pathsToProcess.forEach(p => this.addPath(p))
+          // FOR EDITING
+          //this._pathsToProcess.length > 0 && this._pathsToProcess.forEach(p => this.addPath(p))
         }}
         {...this.panResponder.panHandlers}
         onChange={(e) => {
@@ -300,6 +311,9 @@ class SketchCanvas extends React.Component {
         text={this.state.text}
       />
     );
+    } else {
+      return null;
+    }
   }
 }
 
