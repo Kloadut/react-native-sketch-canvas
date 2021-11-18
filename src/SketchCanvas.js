@@ -12,7 +12,7 @@ import ReactNative, {
   ViewPropTypes,
   processColor
 } from 'react-native'
-import { requestPermissions } from './handlePermissions';
+//import { requestPermissions } from "@terrylinla/react-native-sketch-canvas/src/handlePermissions";
 
 const RNSketchCanvas = requireNativeComponent('RNSketchCanvas', SketchCanvas, {
   nativeOnly: {
@@ -27,6 +27,7 @@ class SketchCanvas extends React.Component {
     style: ViewPropTypes.style,
     strokeColor: PropTypes.string,
     strokeWidth: PropTypes.number,
+    undoMyShit: PropTypes.bool,
     onPathsChange: PropTypes.func,
     onStrokeStart: PropTypes.func,
     onStrokeChanged: PropTypes.func,
@@ -58,6 +59,7 @@ class SketchCanvas extends React.Component {
     style: null,
     strokeColor: '#000000',
     strokeWidth: 3,
+    undoMyShit: false,
     onPathsChange: () => { },
     onStrokeStart: () => { },
     onStrokeChanged: () => { },
@@ -75,7 +77,9 @@ class SketchCanvas extends React.Component {
   };
 
   state = {
-    text: null
+    text: null,
+    path: null,
+    paths: []
   }
 
   constructor(props) {
@@ -92,10 +96,38 @@ class SketchCanvas extends React.Component {
     this.state.text = this._processText(props.text ? props.text.map(t => Object.assign({}, t)) : null)
   }
 
-  componentWillReceiveProps(nextProps) {
-    this.setState({
-      text: this._processText(nextProps.text ? nextProps.text.map(t => Object.assign({}, t)) : null)
-    })
+  shouldComponentUpdate(nextProps, nextState) {
+    if (nextProps.zoomEnded === false && nextProps.zoomEnded !== this.props.zoomEnded && nextProps.undoMyShit === this.props.undoMyShit) {
+      return false
+    } else {
+      return true
+    }
+  }
+
+  componentDidUpdate(prevProps) {
+    if(this.props.zoomEnded === true && this.props.zoomEnded !== prevProps.zoomEnded) {
+      this.props.setPaths(
+        [...this.props.paths, { path: this.state.path, size: this._size, drawer: this.props.user }]
+      )
+      UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.endPath, [])
+      this.undo(() => {
+        this.props.onPathRemoved()
+      })
+      //this._paths.push({ path: this.state.path, size: this._size, drawer: this.props.user })
+      //this.setState({
+      //  text: this._processText(nextProps.text ? nextProps.text.map(t => Object.assign({}, t)) : null),
+      //  path: null
+      //}, () => {
+      //  UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.deletePath, [])
+      //this.props.onPathRemoved()
+      //})
+    } else if(this.props.text !== prevProps.text) {
+      return this.setState({
+        text: this._processText(this.props.text ? this.props.text.map(t => Object.assign({}, t)) : null)
+      })
+    } else if(this.props.undoMyShit !== prevProps.undoMyShit && this.props.undoMyShit === true && this.props.zoomEnded === false) {
+      return this.undo();
+    }
   }
 
   _processText(text) {
@@ -104,21 +136,25 @@ class SketchCanvas extends React.Component {
   }
 
   clear() {
-    this._paths = []
-    this._path = null
-    UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.clear, [])
+    //this._paths = []
+    //this._path = null
+    this.props.setPaths([])
+    this.setState({ path: null }, () => {
+      UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.clear, [])
+    })
   }
 
-  undo() {
+  undo(callback) {
     let lastId = -1;
-    this._paths.forEach(d => lastId = d.drawer === this.props.user ? d.path.id : lastId)
-    if (lastId >= 0) this.deletePath(lastId)
-    return lastId
+    this.props.paths.forEach(d => lastId = d.drawer === this.props.user ? d.path.id : lastId)
+    if (lastId >= 0) this.deletePath(lastId, callback)
   }
 
   addPath(data) {
     if (this._initialized) {
-      if (this._paths.filter(p => p.path.id === data.path.id).length === 0) this._paths.push(data)
+      if (this.props.paths.filter(p => p.path.id === data.path.id).length === 0) {
+        this.props.setPaths([...this.props.paths, data])
+      }
       const pathData = data.path.data.map(p => {
         const coor = p.split(',').map(pp => parseFloat(pp).toFixed(2))
         return `${coor[0] * this._screenScale * this._size.width / data.size.width},${coor[1] * this._screenScale * this._size.height / data.size.height}`;
@@ -131,9 +167,11 @@ class SketchCanvas extends React.Component {
     }
   }
 
-  deletePath(id) {
-    this._paths = this._paths.filter(p => p.path.id !== id)
+  deletePath(id, callback) {
+    //this._paths = this._paths.filter(p => p.path.id !== id)
+    this.props.setPaths(this.props.paths.filter(p => p.path.id !== id))
     UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.deletePath, [id])
+    if (callback) callback(id)
   }
 
   save(imageType, transparent, folder, filename, includeImage, includeText, cropToImageSize) {
@@ -141,7 +179,7 @@ class SketchCanvas extends React.Component {
   }
 
   getPaths() {
-    return this._paths
+    return this.props.paths
   }
 
   getBase64(imageType, transparent, includeImage, includeText, cropToImageSize, callback) {
@@ -164,49 +202,59 @@ class SketchCanvas extends React.Component {
         if (!this.props.touchEnabled) return
         const e = evt.nativeEvent
         this._offset = { x: e.pageX - e.locationX, y: e.pageY - e.locationY }
-        this._path = {
+        
+        this.setState({ path: {
           id: parseInt(Math.random() * 100000000), color: this.props.strokeColor,
           width: this.props.strokeWidth, data: []
-        }
-        
-        UIManager.dispatchViewManagerCommand(
-          this._handle,
-          UIManager.RNSketchCanvas.Commands.newPath,
-          [
-            this._path.id,
-            processColor(this._path.color),
-            this._path.width * this._screenScale
-          ]
-        )
-        UIManager.dispatchViewManagerCommand(
-          this._handle,
-          UIManager.RNSketchCanvas.Commands.addPoint,
-          [
-            parseFloat((gestureState.x0 - this._offset.x).toFixed(2) * this._screenScale),
-            parseFloat((gestureState.y0 - this._offset.y).toFixed(2) * this._screenScale)
-          ]
-        )
-        const x = parseFloat((gestureState.x0 - this._offset.x).toFixed(2)), y = parseFloat((gestureState.y0 - this._offset.y).toFixed(2))
-        this._path.data.push(`${x},${y}`)
-        this.props.onStrokeStart(x, y)
+        }}, () => {
+          UIManager.dispatchViewManagerCommand(
+            this._handle,
+            UIManager.RNSketchCanvas.Commands.newPath,
+            [
+              this.state.path.id,
+              processColor(this.state.path.color),
+              this.state.path.width * this._screenScale
+            ]
+          )
+          UIManager.dispatchViewManagerCommand(
+            this._handle,
+            UIManager.RNSketchCanvas.Commands.addPoint,
+            [
+              parseFloat((gestureState.x0 - this._offset.x).toFixed(2) * this._screenScale),
+              parseFloat((gestureState.y0 - this._offset.y).toFixed(2) * this._screenScale)
+            ]
+          )
+          const x = parseFloat((gestureState.x0 - this._offset.x).toFixed(2)), y = parseFloat((gestureState.y0 - this._offset.y).toFixed(2))
+          this.setState({ path: {...this.state.path, data: [...this.state.path.data, `${x},${y}`]} }, () => {
+            //this._path.data.push(`${x},${y}`)
+            this.props.onStrokeStart(x, y)
+          })
+        })
       },
       onPanResponderMove: (evt, gestureState) => {
         if (!this.props.touchEnabled) return
-        if (this._path) {
+        if (this.state.path) {
+          // I'm a machine
+          const adjX = (gestureState.moveX - gestureState.x0) * ((this.props.zoomLevel - 1)/0.5) * (this.props.zoomLevel - 1)
+          const adjY = (gestureState.moveY - gestureState.y0) * ((this.props.zoomLevel - 1)/0.5) * (this.props.zoomLevel - 1)
+
           UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.addPoint, [
-            parseFloat((gestureState.moveX - this._offset.x).toFixed(2) * this._screenScale),
-            parseFloat((gestureState.moveY - this._offset.y).toFixed(2) * this._screenScale)
+            parseFloat((gestureState.moveX - adjX - this._offset.x).toFixed(2) * this._screenScale),
+            parseFloat((gestureState.moveY - adjY - this._offset.y).toFixed(2) * this._screenScale)
           ])
           const x = parseFloat((gestureState.moveX - this._offset.x).toFixed(2)), y = parseFloat((gestureState.moveY - this._offset.y).toFixed(2))
-          this._path.data.push(`${x},${y}`)
-          this.props.onStrokeChanged(x, y)
+          this.setState({ path: {...this.state.path, data: [...this.state.path.data, `${x},${y}`]} }, () => {
+            //this._path.data.push(`${x},${y}`)
+            this.props.onStrokeChanged(x, y)
+          })
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
         if (!this.props.touchEnabled) return
-        if (this._path) {
-          this.props.onStrokeEnd({ path: this._path, size: this._size, drawer: this.props.user })
-          this._paths.push({ path: this._path, size: this._size, drawer: this.props.user })
+        if (this.state.path) {
+          this.props.onStrokeEnd({ path: this.state.path, size: this._size, drawer: this.props.user })
+          this.props.setPaths([...this.props.paths, { path: this.state.path, size: this._size, drawer: this.props.user }])
+            //this._paths.push({ path: this.state.path, size: this._size, drawer: this.props.user })
         }
         UIManager.dispatchViewManagerCommand(this._handle, UIManager.RNSketchCanvas.Commands.endPath, [])
       },
@@ -218,10 +266,10 @@ class SketchCanvas extends React.Component {
   }
 
   async componentDidMount() {
-    const isStoragePermissionAuthorized = await requestPermissions(
-      this.props.permissionDialogTitle,
-      this.props.permissionDialogMessage,
-    );
+    //const isStoragePermissionAuthorized = await requestPermissions(
+    //  this.props.permissionDialogTitle,
+    //  this.props.permissionDialogMessage,
+    //);
   }
 
   render() {
